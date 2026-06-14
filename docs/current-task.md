@@ -1,65 +1,58 @@
 # Current Task for Claude Code
 
-## Status: Supabase SQL ready — awaiting live cloud project before Expo scaffold
+## Status: Expo app scaffolded and wired to live Supabase — ready to run on a device
 
 ### Progress
 - ✅ Screen layout decided: bottom tabs, compass-first (see `decisions.md`)
-- ✅ Supabase SQL built: schema, RPC functions, golden-set seed (`supabase/`)
+- ✅ Supabase SQL built + **applied to the live project** (schema, RPCs, golden-set seed)
 - ✅ GitHub linked & pushed: github.com/nicknickngng/bodega-map
-- ⬜ Supabase cloud project created + SQL applied  ← **next, needs the developer**
-- ⬜ Expo app scaffolded (deferred until Supabase is live, so screens wire to real data)
+- ✅ Expo app scaffolded (SDK 56, Expo Router, TypeScript) and restructured to `src/app/(tabs)`
+- ✅ Supabase client + geospatial query helpers + TS types wired to live data
+- ✅ Compass + Map screens built; iOS bundle exports cleanly (`npx expo export -p ios`)
+- ⬜ Run on a device and verify behavior (next)
 
 ---
 
-## Immediate next action (developer)
+## How to run it
 
-Create the Supabase cloud project and apply the SQL, then hand back the URL + anon key.
-Full steps are in `supabase/README.md`. In short:
+```bash
+npm start          # then press i / a, or scan the QR with Expo Go
+```
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. In the **SQL Editor**, run in order:
-   - `supabase/migrations/0001_initial_schema.sql`
-   - `supabase/migrations/0002_rpc_functions.sql`
-   - `supabase/seed.sql`
-3. Verify with the test queries in `supabase/README.md`.
-4. Copy the project **URL** and **anon key** from **Project Settings → API**.
+- **Map tab:** works in the iOS Simulator and on device. Should show the 5 golden-set
+  pins when viewing the Upper East Side, plus your location.
+- **Compass tab:** needs a **physical iPhone** (the Simulator has no magnetometer).
+  Open in Expo Go on a real device to see the arrow track the nearest bodega.
 
-These two values go into `.env.local` (gitignored) when the app is scaffolded.
+Credentials live in `.env.local` (gitignored). `.env.example` documents the keys.
 
 ---
 
-## Then: scaffold Expo (Claude Code)
+## App structure (built)
 
-Once Supabase is live:
-
-### Step 1 — Initialize Expo (blank TypeScript template)
-The repo root is the app root, so scaffold into a temp dir and merge to root
-(avoids a nested `bodegamap/bodegamap`).
-```bash
-npx create-expo-app@latest -t expo-template-blank-typescript
+```
+src/
+├── app/
+│   ├── _layout.tsx            ← root Stack
+│   └── (tabs)/
+│       ├── _layout.tsx        ← bottom tabs (Compass default, Map)
+│       ├── index.tsx          ← Compass screen
+│       └── map.tsx            ← Map screen
+├── lib/
+│   ├── supabase.ts            ← client (env-based, no auth)
+│   ├── queries.ts             ← nearby_bodegas / bodegas_in_bbox RPC helpers
+│   └── geo.ts                 ← bearing, haversine, distance formatting
+└── types/
+    └── bodega.ts              ← Bodega / NearbyBodega types
 ```
 
-### Step 2 — Install core dependencies
-```bash
-npx expo install expo-router expo-location react-native-maps @supabase/supabase-js \
-  react-native-safe-area-context react-native-screens expo-linking expo-constants
-```
+---
 
-### Step 3 — Folder structure (Expo Router auto-detects `src/app`)
-- `src/app/(tabs)/_layout.tsx` — bottom tab navigator
-- `src/app/(tabs)/index.tsx` — Compass screen (default tab, app entry point)
-- `src/app/(tabs)/map.tsx` — Map screen
-- `src/app/bodega/[id].tsx` — Bodega detail sheet (modal)
-- `src/lib/supabase.ts` — Supabase client (URL + anon key from env)
-- `src/lib/queries.ts` — `rpc('nearby_bodegas', …)` and `rpc('bodegas_in_bbox', …)` helpers
-- `src/types/bodega.ts` — TypeScript types for the bodega row
-
-### Step 4 — Build the two tab screens against real data
-- **Compass screen:** request location + heading (`expo-location` `watchHeadingAsync`);
-  call `nearby_bodegas(lat, lng, 1)`; render arrow rotated by `bearing − heading`,
-  plus nearest name + distance. NOTE: heading needs a real device (no Simulator magnetometer).
-- **Map screen:** `MapView` centered on user; load pins via `bodegas_in_bbox(...)`
-  on region change; pin tap → detail sheet.
+## Likely next steps (after a device test)
+- Bodega detail sheet (`src/app/bodega/[id].tsx`) — modal from a map pin / compass tap,
+  with the Google Maps deep link.
+- Tune compass heading smoothing and re-query cadence on a real device.
+- Populate the full bodega dataset (OSM import — parallel workstream).
 
 ---
 
@@ -67,4 +60,3 @@ npx expo install expo-router expo-location react-native-maps @supabase/supabase-
 - Full architecture: `docs/architecture.md`
 - Decision rationale: `docs/decisions.md`
 - Supabase apply/verify steps: `supabase/README.md`
-- UX flow: designed in Cowork session on 2026-06-14

@@ -244,8 +244,9 @@ bodegamap/
 │   │   └── bodega/[id].tsx  ← Bodega detail sheet (modal)
 │   ├── components/
 │   ├── lib/
-│   │   ├── supabase.ts      ← Supabase client init
-│   │   └── queries.ts       ← geospatial query helpers
+│   │   ├── supabase.ts      ← Supabase client init (env-based)
+│   │   ├── queries.ts       ← geospatial RPC helpers
+│   │   └── geo.ts           ← bearing / haversine / distance formatting
 │   └── types/
 │       └── bodega.ts        ← TypeScript types
 ├── scripts/
