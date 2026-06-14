@@ -6,7 +6,8 @@
 - ✅ Screen layout decided: bottom tabs, compass-first (see `decisions.md`)
 - ✅ Supabase SQL built + **applied to the live project** (schema, RPCs, golden-set seed)
 - ✅ GitHub linked & pushed: github.com/nicknickngng/bodega-map
-- ✅ Expo app scaffolded (SDK 56, Expo Router, TypeScript) and restructured to `src/app/(tabs)`
+- ✅ Expo app scaffolded (SDK 54, Expo Router, TypeScript) and restructured to `src/app/(tabs)`
+  - Pinned to SDK 54 to match the public Expo Go release (SDK 56 wasn't yet supported in Expo Go)
 - ✅ Supabase client + geospatial query helpers + TS types wired to live data
 - ✅ Compass + Map screens built; iOS bundle exports cleanly (`npx expo export -p ios`)
 - ⬜ Run on a device and verify behavior (next)

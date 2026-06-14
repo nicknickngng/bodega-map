@@ -8,7 +8,6 @@
     "scheme": "bodegamap",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
       "supportsTablet": true
     },
     "android": {
