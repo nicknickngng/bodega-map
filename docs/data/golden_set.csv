@@ -1,0 +1,6 @@
+name,address,borough,neighborhood,lat,lng,source,status,hours,phone
+East Side Grocery,1422 2nd Ave New York NY 10021,Manhattan,Upper East Side,40.7702007,-73.9570927,manual,active,,
+Market Deli & Grocery,1388 1st Ave New York NY 10021,Manhattan,Upper East Side,40.7691743,-73.9547812,manual,active,,
+Nada Deli Shawarma,1488 1st Ave New York NY 10075,Manhattan,Upper East Side,40.7712875,-73.9532705,manual,active,,
+East Side Bagel & Appetizing,1496 1st Ave New York NY 10075,Manhattan,Upper East Side,40.7716797,-73.9529411,manual,active,,
+72nd Gourmet Deli,434 E 72nd St New York NY 10021,Manhattan,Upper East Side,40.7668678,-73.954353,manual,active,,

@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native builds
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+ios/
+android/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python (import scripts)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
