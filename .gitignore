@@ -28,6 +28,9 @@ __pycache__/
 .venv/
 venv/
 
+# Downloaded NYC boundary files (reproducible via scripts; not committed)
+scripts/*.geojson
+
 # Editors / OS
 .DS_Store
 *.log
