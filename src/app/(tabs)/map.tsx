@@ -16,8 +16,14 @@ const DEFAULT_REGION: Region = {
 
 // Roughly how many grid cells span the viewport's larger dimension. Higher =
 // finer clusters (more, smaller bubbles). The returned row count is bounded by
-// ~CELLS_ACROSS², so it stays well under the 1000-row server cap.
-const CELLS_ACROSS = 14;
+// ~CELLS_ACROSS², so it stays well under the 1000-row server cap. Kept coarse
+// (was 14) so fewer custom-view markers are on screen at once — each one is a
+// native iOS annotation, and the marker set is the memory bottleneck.
+const CELLS_ACROSS = 9;
+
+// Wait this long after the viewport stops moving before refetching, so a rapid
+// pan/zoom coalesces into a single request instead of one per intermediate frame.
+const RELOAD_DEBOUNCE_MS = 400;
 
 function gridForRegion(r: Region): number {
   return Math.max(r.latitudeDelta, r.longitudeDelta) / CELLS_ACROSS;
@@ -27,8 +33,16 @@ export default function MapScreen() {
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   const [clusters, setClusters] = useState<BodegaCluster[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Custom-view markers must "track view changes" to rasterize their content,
+  // but doing so continuously is the memory sink. We turn tracking on for one
+  // beat after each cluster update (so bubbles render their count) then off.
+  const [tracksChanges, setTracksChanges] = useState(true);
   const mapRef = useRef<MapView>(null);
   const didCenterOnUser = useRef(false);
+  // Monotonic id of the latest in-flight fetch; results from older fetches are
+  // discarded so a slow response can't overwrite a newer viewport's data.
+  const requestIdRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Center on the user once, on first load.
   useEffect(() => {
@@ -56,6 +70,7 @@ export default function MapScreen() {
   }, []);
 
   async function loadClusters(r: Region) {
+    const reqId = ++requestIdRef.current;
     try {
       const data = await fetchBodegaClusters(
         {
@@ -66,11 +81,36 @@ export default function MapScreen() {
         },
         gridForRegion(r),
       );
+      if (reqId !== requestIdRef.current) return; // a newer fetch superseded this one
       setClusters(data);
+      setErrorMsg(null);
     } catch (e: any) {
+      if (reqId !== requestIdRef.current) return;
       setErrorMsg(e?.message ?? 'Could not load bodegas.');
     }
   }
+
+  // Coalesce rapid region changes into a single fetch once movement settles.
+  function scheduleLoad(r: Region) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => loadClusters(r), RELOAD_DEBOUNCE_MS);
+  }
+
+  // After each cluster update, briefly let markers re-rasterize so bubbles show
+  // their (possibly changed) count, then stop tracking to cap memory churn.
+  useEffect(() => {
+    setTracksChanges(true);
+    const t = setTimeout(() => setTracksChanges(false), 500);
+    return () => clearTimeout(t);
+  }, [clusters]);
+
+  // Cancel any pending fetch when the screen unmounts.
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
+  );
 
   // Zoom in toward a tapped cluster; the resulting region change reloads at a
   // finer grid, so the cluster splits apart.
@@ -96,23 +136,23 @@ export default function MapScreen() {
         showsMyLocationButton
         onRegionChangeComplete={(r) => {
           setRegion(r);
-          loadClusters(r);
+          scheduleLoad(r);
         }}
         onMapReady={() => loadClusters(region)}>
         {clusters.map((c) =>
           c.point_count === 1 ? (
             <Marker
-              key={c.bodega_id ?? `${c.cluster_lat},${c.cluster_lng}`}
+              key={`${c.gx}:${c.gy}`}
               coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
               title={c.name ?? 'Bodega'}
               description={c.address ?? undefined}
             />
           ) : (
             <Marker
-              key={`${c.cluster_lat},${c.cluster_lng}`}
+              key={`${c.gx}:${c.gy}`}
               coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
               onPress={() => zoomToCluster(c)}
-              tracksViewChanges={false}>
+              tracksViewChanges={tracksChanges}>
               <ClusterBubble count={c.point_count} />
             </Marker>
           ),

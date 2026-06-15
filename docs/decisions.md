@@ -4,11 +4,14 @@ Running log of architectural and product decisions. Add new entries at the top.
 
 ---
 
-## 2026-06-14 — Map clustering perf/correctness (decided; implementation deferred)
+## 2026-06-14 — Map clustering perf/correctness (shipped + device-verified)
 
 ### Map reloads pins via debounced auto-reload, not a manual button
-**Decision:** When the clustering fixes land, the map will reload clusters automatically ~400 ms after the viewport settles (debounced), rather than a manual "Search this area" button. A manual button stays as a fallback only if crashes persist afterward.
-**Reason:** Smoother, expected map UX. The crash isn't caused by *how often we fetch* per se — it's the marker rebuild churn — so debounce + the fixes below address it without forcing manual taps. Full implementation plan lives in `current-task.md` (NEXT SESSION section).
+**Decision:** The map reloads clusters automatically ~400 ms after the viewport settles (debounced), rather than a manual "Search this area" button. A manual button stays as a fallback only if crashes resurface.
+**Reason:** Smoother, expected map UX. The crash wasn't caused by *how often we fetch* — it was marker rebuild churn — so debounce + the fixes below addressed it without forcing manual taps.
+
+### Outcome (2026-06-14): all four fixes implemented, migration applied, verified on device
+Landed in `src/app/(tabs)/map.tsx` + migration `0004_clusters_grid_keys.sql`. The migration **drops and recreates** `bodegas_clusters` (adding `gx`/`gy` changes the return type, which `create or replace` can't do — Postgres errors `42P13`). Device test: >1 min continuous pan/zoom, no crash, clusters stable, no blank bubbles.
 
 ### Diagnosis on record (so we don't relitigate it)
 - **Crash after ~30 s of panning = custom-marker churn, not DB load.** Count bubbles are custom-`<View>` markers rasterized into native iOS annotations; rebuilding the whole set (150–200) on every pan exhausts memory. DB payloads are a few KB and are not the bottleneck. The user's "too many DB calls" hypothesis was the wrong culprit.

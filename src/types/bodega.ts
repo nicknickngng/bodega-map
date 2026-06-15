@@ -28,6 +28,10 @@ export type NearbyBodega = Bodega & {
  * id/name/address are populated so the client can render a real pin.
  */
 export type BodegaCluster = {
+  /** Integer grid-cell indices. Stable per cell at a fixed zoom — used as the
+   * marker key so markers are reused across pans instead of remounted. */
+  gx: number;
+  gy: number;
   cluster_lat: number;
   cluster_lng: number;
   point_count: number;
