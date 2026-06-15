@@ -21,3 +21,17 @@ export type NearbyBodega = Bodega & {
   /** Straight-line distance in meters. */
   distance_m: number;
 };
+
+/**
+ * A map cluster from the `bodegas_clusters` RPC: a grid cell's centroid and how
+ * many bodegas fall in it. When `point_count === 1`, the single bodega's
+ * id/name/address are populated so the client can render a real pin.
+ */
+export type BodegaCluster = {
+  cluster_lat: number;
+  cluster_lng: number;
+  point_count: number;
+  bodega_id: string | null;
+  name: string | null;
+  address: string | null;
+};

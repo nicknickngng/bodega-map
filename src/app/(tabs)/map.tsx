@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
 
-import { fetchBodegasInBbox } from '@/lib/queries';
-import type { Bodega } from '@/types/bodega';
+import { fetchBodegaClusters } from '@/lib/queries';
+import type { BodegaCluster } from '@/types/bodega';
 
 // Fallback view: the golden-set cluster on the Upper East Side.
 const DEFAULT_REGION: Region = {
@@ -14,10 +14,20 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 0.02,
 };
 
+// Roughly how many grid cells span the viewport's larger dimension. Higher =
+// finer clusters (more, smaller bubbles). The returned row count is bounded by
+// ~CELLS_ACROSS², so it stays well under the 1000-row server cap.
+const CELLS_ACROSS = 14;
+
+function gridForRegion(r: Region): number {
+  return Math.max(r.latitudeDelta, r.longitudeDelta) / CELLS_ACROSS;
+}
+
 export default function MapScreen() {
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
-  const [bodegas, setBodegas] = useState<Bodega[]>([]);
+  const [clusters, setClusters] = useState<BodegaCluster[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const mapRef = useRef<MapView>(null);
   const didCenterOnUser = useRef(false);
 
   // Center on the user once, on first load.
@@ -30,51 +40,83 @@ export default function MapScreen() {
       });
       if (!didCenterOnUser.current) {
         didCenterOnUser.current = true;
-        setRegion((r) => ({
-          ...r,
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        }));
+        mapRef.current?.animateToRegion(
+          {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+            latitudeDelta: DEFAULT_REGION.latitudeDelta,
+            longitudeDelta: DEFAULT_REGION.longitudeDelta,
+          },
+          400,
+        );
       }
     })().catch(() => {
       /* non-fatal: fall back to the default region */
     });
   }, []);
 
-  async function loadBodegasForRegion(r: Region) {
+  async function loadClusters(r: Region) {
     try {
-      const data = await fetchBodegasInBbox({
-        minLat: r.latitude - r.latitudeDelta / 2,
-        maxLat: r.latitude + r.latitudeDelta / 2,
-        minLng: r.longitude - r.longitudeDelta / 2,
-        maxLng: r.longitude + r.longitudeDelta / 2,
-      });
-      setBodegas(data);
+      const data = await fetchBodegaClusters(
+        {
+          minLat: r.latitude - r.latitudeDelta / 2,
+          maxLat: r.latitude + r.latitudeDelta / 2,
+          minLng: r.longitude - r.longitudeDelta / 2,
+          maxLng: r.longitude + r.longitudeDelta / 2,
+        },
+        gridForRegion(r),
+      );
+      setClusters(data);
     } catch (e: any) {
       setErrorMsg(e?.message ?? 'Could not load bodegas.');
     }
   }
 
+  // Zoom in toward a tapped cluster; the resulting region change reloads at a
+  // finer grid, so the cluster splits apart.
+  function zoomToCluster(c: BodegaCluster) {
+    mapRef.current?.animateToRegion(
+      {
+        latitude: c.cluster_lat,
+        longitude: c.cluster_lng,
+        latitudeDelta: region.latitudeDelta / 2.5,
+        longitudeDelta: region.longitudeDelta / 2.5,
+      },
+      350,
+    );
+  }
+
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         style={StyleSheet.absoluteFill}
-        region={region}
+        initialRegion={DEFAULT_REGION}
         showsUserLocation
         showsMyLocationButton
         onRegionChangeComplete={(r) => {
           setRegion(r);
-          loadBodegasForRegion(r);
+          loadClusters(r);
         }}
-        onMapReady={() => loadBodegasForRegion(region)}>
-        {bodegas.map((b) => (
-          <Marker
-            key={b.id}
-            coordinate={{ latitude: b.lat, longitude: b.lng }}
-            title={b.name}
-            description={b.address ?? undefined}
-          />
-        ))}
+        onMapReady={() => loadClusters(region)}>
+        {clusters.map((c) =>
+          c.point_count === 1 ? (
+            <Marker
+              key={c.bodega_id ?? `${c.cluster_lat},${c.cluster_lng}`}
+              coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
+              title={c.name ?? 'Bodega'}
+              description={c.address ?? undefined}
+            />
+          ) : (
+            <Marker
+              key={`${c.cluster_lat},${c.cluster_lng}`}
+              coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
+              onPress={() => zoomToCluster(c)}
+              tracksViewChanges={false}>
+              <ClusterBubble count={c.point_count} />
+            </Marker>
+          ),
+        )}
       </MapView>
 
       {errorMsg ? (
@@ -86,9 +128,35 @@ export default function MapScreen() {
   );
 }
 
+function ClusterBubble({ count }: { count: number }) {
+  // Scale the bubble a little with magnitude so dense cells read as bigger.
+  const size = count >= 100 ? 56 : count >= 10 ? 48 : 40;
+  return (
+    <View
+      style={[
+        styles.bubble,
+        { width: size, height: size, borderRadius: size / 2 },
+      ]}>
+      <Text style={styles.bubbleText}>{count}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  bubble: {
+    backgroundColor: 'rgba(32,138,239,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  bubbleText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
   },
   banner: {
     position: 'absolute',

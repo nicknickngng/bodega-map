@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { Bodega, NearbyBodega } from '@/types/bodega';
+import type { Bodega, BodegaCluster, NearbyBodega } from '@/types/bodega';
 
 /**
  * Nearest active bodegas to a point, ordered by distance.
@@ -46,4 +46,23 @@ export async function fetchBodegasInBbox(bounds: {
   });
   if (error) throw error;
   return (data ?? []) as Bodega[];
+}
+
+/**
+ * Grid-clustered bodegas for the map viewport. Wraps the `bodegas_clusters`
+ * RPC. `grid` is the cell size in degrees (smaller = finer clusters).
+ */
+export async function fetchBodegaClusters(
+  bounds: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+  grid: number,
+): Promise<BodegaCluster[]> {
+  const { data, error } = await supabase.rpc('bodegas_clusters', {
+    min_lat: bounds.minLat,
+    min_lng: bounds.minLng,
+    max_lat: bounds.maxLat,
+    max_lng: bounds.maxLng,
+    grid,
+  });
+  if (error) throw error;
+  return (data ?? []) as BodegaCluster[];
 }
