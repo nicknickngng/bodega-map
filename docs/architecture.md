@@ -69,6 +69,7 @@ The compass is the default tab and the app's signature feature.
   - Uses Apple Maps on iOS (no API key required), Google Maps on Android.
   - Renders map tiles natively — fast and familiar to users.
 - **Viewport loading:** Query Supabase for bodegas within the visible map bounding box on pan/zoom. Don't load all bodegas at once.
+- **Clustering (server-side):** The map calls `bodegas_clusters` (not `bodegas_in_bbox`), which grids the in-view bodegas and returns one row per cell with a count. This is required, not cosmetic: PostgREST caps responses at 1,000 rows (Supabase "Max rows" setting), so a raw bbox query silently drops pins once a viewport holds >1,000 bodegas. Clustering keeps the row count bounded by grid cells (~`CELLS_ACROSS²`), so counts always represent *all* in-view bodegas. Cells with one bodega return its id/name and render as a normal pin; multi-bodega cells render as a count bubble that zooms in on tap (finer grid → splits apart).
 
 ---
 
@@ -132,12 +133,13 @@ create table suggestions (
 
 ### Geospatial access via RPC functions
 
-PostGIS distance ordering (`<->`, `ST_Distance`) and bounding-box filters **cannot** be expressed through PostgREST's auto-generated REST API. So the two geospatial reads are wrapped in Postgres functions and called from the app with `supabase.rpc(...)`:
+PostGIS distance ordering (`<->`, `ST_Distance`) and bounding-box filters **cannot** be expressed through PostgREST's auto-generated REST API. So the geospatial reads are wrapped in Postgres functions and called from the app with `supabase.rpc(...)`:
 
 - **`nearby_bodegas(user_lat, user_lng, max_results)`** — nearest active bodegas ordered by distance, with `distance_m`. The compass calls this with `max_results = 1`.
-- **`bodegas_in_bbox(min_lat, min_lng, max_lat, max_lng)`** — active bodegas within the visible map viewport, via the GiST index.
+- **`bodegas_in_bbox(min_lat, min_lng, max_lat, max_lng)`** — active bodegas within the visible map viewport, via the GiST index. (Superseded for the map by `bodegas_clusters`; kept for reference / point queries.)
+- **`bodegas_clusters(min_lat, min_lng, max_lat, max_lng, grid)`** — grid-aggregated clusters (centroid + count per cell) for the map. Bounded row count avoids the 1,000-row cap. See the Map section. Lives in `supabase/migrations/0003_clusters_function.sql`.
 
-Both live in `supabase/migrations/0002_rpc_functions.sql` and are `SECURITY INVOKER`, so the `bodegas` RLS policy (public read of active rows only) applies.
+The first two live in `supabase/migrations/0002_rpc_functions.sql`. All are `SECURITY INVOKER`, so the `bodegas` RLS policy (public read of active rows only) applies.
 
 ### Key query: nearest bodegas (inside `nearby_bodegas`)
 ```sql
@@ -158,7 +160,7 @@ The bodega dataset is owned and maintained in Supabase. The app frontend only ev
 
 ### Bootstrapping
 
-**Primary source: OpenStreetMap via Overpass API.** OSM has strong NYC coverage and is free with no rate-limit concerns for a one-time bulk pull. Query targets convenience stores and delis within NYC bounds:
+**Primary source: OpenStreetMap via Overpass API.** OSM has strong NYC coverage and is free with no rate-limit concerns for a one-time bulk pull. Query targets convenience stores and delis within NYC bounds, plus a name-regex clause to catch shops tagged generically but named like a bodega:
 
 ```
 [out:json][bbox:40.4774,-74.2591,40.9176,-73.7004];
@@ -166,15 +168,22 @@ The bodega dataset is owned and maintained in Supabase. The app frontend only ev
   node["shop"="convenience"];
   node["shop"="deli"];
   node["amenity"="convenience_store"];
+  node["shop"]["name"~"deli|bodega|corner store",i];
 );
 out body;
 ```
 
-This returns JSON directly — no bulk file download or local processing tools needed. Expected result set: 1,000–3,000 nodes. Each node provides name, coordinates, and address; hours and phone are present for many entries.
+The request must send a descriptive `User-Agent` header — Overpass returns `406 Not Acceptable` without one. This returns JSON directly — no bulk file download needed.
 
-**Import script:** Python script normalizes, deduplicates (entries within ~20m are likely the same location), and inserts into Supabase with `source = 'osm'`. All imported entries start with `status = 'active'` — upstream sources are assumed to contain only active locations.
+**Import script (`scripts/import_osm.py`):** Python script normalizes, deduplicates (entries within ~20m are likely the same location), and inserts into Supabase with `source = 'osm'`. All imported entries start with `status = 'active'` — upstream sources are assumed to contain only active locations.
 
-**borough and neighborhood** are derived from coordinates via reverse geocoding during import (free, no runtime cost).
+> **Status (2026-06-14):** Import has been run. The bbox query returned 3,897 nodes → 3,674 named → 3,495 inserted after dedup. See `decisions.md` (OSM import session) for data-quality notes.
+
+**borough and neighborhood** are derived from coordinates during import via local point-in-polygon lookup (free, no runtime or API cost) against two NYC Open Data GeoJSON files downloaded into `scripts/`:
+- Borough Boundaries (`gthc-hcne`, name field `boroname`)
+- 2020 Neighborhood Tabulation Areas (`9nt8-h7nd`, name field `ntaname`)
+
+The script parses each polygon once into a Shapely STRtree spatial index, so per-node lookup is fast. Because the Overpass bbox is a rectangle, it sweeps in some stores outside NYC (NJ across the Hudson, the Queens/Nassau edge); these fall in no borough polygon and are stored with null `borough`/`neighborhood`.
 
 ### Google Maps business links
 
@@ -250,7 +259,11 @@ bodegamap/
 │   └── types/
 │       └── bodega.ts        ← TypeScript types
 ├── scripts/
-│   └── import-osm.py        ← OSM → Supabase import script
+│   ├── import_osm.py        ← OSM → Supabase import script
+│   ├── nyc_boroughs.geojson ← Borough Boundaries (gthc-hcne), for spatial lookup
+│   ├── nyc_nta.geojson      ← 2020 NTAs (9nt8-h7nd), for spatial lookup
+│   ├── .env                 ← SUPABASE_URL + SERVICE_KEY (gitignored)
+│   └── venv/                ← Python virtualenv (gitignored)
 ├── supabase/
 │   └── migrations/          ← SQL migration files
 ├── app.json                 ← Expo config

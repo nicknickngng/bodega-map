@@ -10,7 +10,9 @@
   - Pinned to SDK 54 to match the public Expo Go release (SDK 56 wasn't yet supported in Expo Go)
 - ✅ Supabase client + geospatial query helpers + TS types wired to live data
 - ✅ Compass + Map screens built; iOS bundle exports cleanly (`npx expo export -p ios`)
-- ⬜ Run on a device and verify behavior (next)
+- ✅ Map clustering: server-side `bodegas_clusters` RPC + count-bubble map UI (fixes the 1,000-row cap silently dropping pins)
+- ⬜ **Apply migration `0003_clusters_function.sql` in the Supabase SQL editor** ← needed before clustering works in the app
+- ⬜ Run on a device and verify behavior
 
 ---
 
