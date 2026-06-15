@@ -4,6 +4,21 @@ Running log of architectural and product decisions. Add new entries at the top.
 
 ---
 
+## 2026-06-14 — Map clustering perf/correctness (decided; implementation deferred)
+
+### Map reloads pins via debounced auto-reload, not a manual button
+**Decision:** When the clustering fixes land, the map will reload clusters automatically ~400 ms after the viewport settles (debounced), rather than a manual "Search this area" button. A manual button stays as a fallback only if crashes persist afterward.
+**Reason:** Smoother, expected map UX. The crash isn't caused by *how often we fetch* per se — it's the marker rebuild churn — so debounce + the fixes below address it without forcing manual taps. Full implementation plan lives in `current-task.md` (NEXT SESSION section).
+
+### Diagnosis on record (so we don't relitigate it)
+- **Crash after ~30 s of panning = custom-marker churn, not DB load.** Count bubbles are custom-`<View>` markers rasterized into native iOS annotations; rebuilding the whole set (150–200) on every pan exhausts memory. DB payloads are a few KB and are not the bottleneck. The user's "too many DB calls" hypothesis was the wrong culprit.
+- **Inconsistent clusters / vanishing pins = stale-response race + a `react-native-maps` blank-marker quirk.** `loadClusters` fires per region change with no sequencing, so an older request can overwrite a newer one; and custom markers with `tracksViewChanges={false}` sometimes render blank.
+
+### Fixes agreed (all four): debounce, stale-response guard, stable marker keys + tracksViewChanges handling, coarser grid (`CELLS_ACROSS` 14 → ~8–10)
+**Note:** Considered and rejected a fixed "show N pins" cap — any cap silently drops pins, the original problem clustering was meant to solve.
+
+---
+
 ## 2026-06-14 — Map clustering session
 
 ### Map uses server-side clustering, not raw pin loading

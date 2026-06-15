@@ -1,33 +1,36 @@
 # Current Task for Claude Code
 
-## Status: Expo app scaffolded and wired to live Supabase — ready to run on a device
+## Status: App running on device. Map clustering works but needs perf/correctness fixes (NEXT SESSION).
 
 ### Progress
 - ✅ Screen layout decided: bottom tabs, compass-first (see `decisions.md`)
 - ✅ Supabase SQL built + **applied to the live project** (schema, RPCs, golden-set seed)
 - ✅ GitHub linked & pushed: github.com/nicknickngng/bodega-map
-- ✅ Expo app scaffolded (SDK 54, Expo Router, TypeScript) and restructured to `src/app/(tabs)`
-  - Pinned to SDK 54 to match the public Expo Go release (SDK 56 wasn't yet supported in Expo Go)
-- ✅ Supabase client + geospatial query helpers + TS types wired to live data
+- ✅ Expo app scaffolded (SDK 54, Expo Router, TypeScript), `src/app/(tabs)`
+  - Pinned to SDK 54 to match the public Expo Go release (SDK 56 wasn't supported in Expo Go)
 - ✅ Compass + Map screens built; iOS bundle exports cleanly (`npx expo export -p ios`)
-- ✅ Map clustering: server-side `bodegas_clusters` RPC + count-bubble map UI (fixes the 1,000-row cap silently dropping pins)
-- ⬜ **Apply migration `0003_clusters_function.sql` in the Supabase SQL editor** ← needed before clustering works in the app
-- ⬜ Run on a device and verify behavior
+- ✅ Map clustering: `bodegas_clusters` RPC + count-bubble UI; migration `0003` applied
+- ✅ Runs on a physical iPhone via `npx expo start --tunnel` (LAN blocked by network; tunnel is flaky — retry / use iPhone hotspot + LAN as fallback)
+- ⬜ **Map clustering perf + correctness fixes** ← active next task, see below
 
 ---
 
-## How to run it
+## NEXT SESSION — Map clustering fixes (decided, not yet implemented)
 
-```bash
-npm start          # then press i / a, or scan the QR with Expo Go
-```
+**Observed problems on device:**
+1. **Crash after ~30s of panning.** Root cause = custom-view marker churn, NOT database load. Each count bubble is a custom `<View>` marker that iOS rasterizes into a native annotation; the *entire* marker set is rebuilt on every pan/zoom (150–200 native views created/destroyed repeatedly) → memory climbs until iOS kills the app. (DB payloads are tiny — a few KB — so they are not the bottleneck.)
+2. **Inconsistent clusters / pins vanish with no bubble.** Root cause = a **stale-response race**: `loadClusters` is async and fires on every region change with no sequencing, so a slower older request can resolve after a newer one and overwrite state with data for the wrong viewport. Plus a known `react-native-maps` quirk where custom markers with `tracksViewChanges={false}` sometimes render blank.
 
-- **Map tab:** works in the iOS Simulator and on device. Should show the 5 golden-set
-  pins when viewing the Upper East Side, plus your location.
-- **Compass tab:** needs a **physical iPhone** (the Simulator has no magnetometer).
-  Open in Expo Go on a real device to see the arrow track the nearest bodega.
+**Agreed fix (implement all four):**
+1. **Debounced auto-reload** — on `onRegionChangeComplete`, wait ~400 ms after movement settles before calling `loadClusters` (coalesce rapid pans). Chosen over a manual "Search this area" button for smoother UX; revisit the button only if crashes persist after these fixes.
+2. **Ignore stale responses** — keep a `requestId` ref (or AbortController); increment per fetch; only apply a result if it's still the latest. Kills the race in problem #2.
+3. **Stabilize markers** — give markers stable keys so they're reused, not torn down, across refetches. Best: have `bodegas_clusters` also return the grid cell indices (`gx`, `gy`) and key markers by `gx:gy` (current key is the centroid average, which drifts every refetch and forces full remounts). Manage `tracksViewChanges` (start `true`, flip to `false` after first render) so bubbles never render blank.
+4. **Coarser clusters** — lower `CELLS_ACROSS` in `map.tsx` from 14 to ~8–10 so fewer custom markers are on screen at once (less memory, counts stay accurate).
 
-Credentials live in `.env.local` (gitignored). `.env.example` documents the keys.
+**Touch points:**
+- `src/app/(tabs)/map.tsx` — debounce, requestId guard, marker keys/tracksViewChanges, `CELLS_ACROSS`.
+- `supabase/migrations/0003_clusters_function.sql` — if adding `gx`/`gy` to the output, write a new migration (e.g. `0004_clusters_grid_keys.sql`, `create or replace function`) and re-apply in the SQL editor; update `BodegaCluster` type + `fetchBodegaClusters`.
+- Validate with `npx tsc --noEmit` and `npx expo export -p ios`, then device test (pan for >1 min to confirm no crash).
 
 ---
 
@@ -40,22 +43,20 @@ src/
 │   └── (tabs)/
 │       ├── _layout.tsx        ← bottom tabs (Compass default, Map)
 │       ├── index.tsx          ← Compass screen
-│       └── map.tsx            ← Map screen
+│       └── map.tsx            ← Map screen (clustering)
 ├── lib/
 │   ├── supabase.ts            ← client (env-based, no auth)
-│   ├── queries.ts             ← nearby_bodegas / bodegas_in_bbox RPC helpers
+│   ├── queries.ts             ← nearby_bodegas / bodegas_in_bbox / bodegas_clusters helpers
 │   └── geo.ts                 ← bearing, haversine, distance formatting
 └── types/
-    └── bodega.ts              ← Bodega / NearbyBodega types
+    └── bodega.ts              ← Bodega / NearbyBodega / BodegaCluster types
 ```
 
 ---
 
-## Likely next steps (after a device test)
-- Bodega detail sheet (`src/app/bodega/[id].tsx`) — modal from a map pin / compass tap,
-  with the Google Maps deep link.
+## Later (after clustering fixes)
+- Bodega detail sheet (`src/app/bodega/[id].tsx`) — modal from a map pin / compass tap, with the Google Maps deep link.
 - Tune compass heading smoothing and re-query cadence on a real device.
-- Populate the full bodega dataset (OSM import — parallel workstream).
 
 ---
 
