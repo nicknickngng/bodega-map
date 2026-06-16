@@ -134,6 +134,11 @@ export default function MapScreen() {
         initialRegion={DEFAULT_REGION}
         showsUserLocation
         showsMyLocationButton
+        // Hide Apple Maps' own business/POI labels so the map reads as just our
+        // bodegas. All-or-nothing on Apple Maps (also drops parks/transit labels);
+        // selective control arrives with the planned Google-provider switch. See
+        // docs/decisions.md (2026-06-15, basemap styling).
+        showsPointsOfInterest={false}
         onRegionChangeComplete={(r) => {
           setRegion(r);
           scheduleLoad(r);

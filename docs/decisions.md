@@ -4,6 +4,48 @@ Running log of architectural and product decisions. Add new entries at the top.
 
 ---
 
+## 2026-06-15 — Don't-cluster-near-the-user map feature (queued, not built)
+
+### Bodegas within 100m of the user always render as individual pins, never folded into a count bubble
+**Decision (queued):** Add a map feature where active bodegas within **100m of the user's location** bypass grid clustering and always draw as individual pins, even when the surrounding viewport is clustered into count bubbles. **Not built yet** — logged as the intended design. Rationale: the bodegas closest to you are exactly the ones you want to see precisely; this complements the compass (compass points to *the* single nearest; the map would show your immediate cluster of options as distinct, tappable pins).
+
+### Where it belongs: server-side, in the `bodegas_clusters` RPC (new migration `0005`)
+The clustering logic lives in `bodegas_clusters` (migrations `0003`/`0004`), so the feature extends that function rather than adding client-side merging:
+1. Add nullable `user_lat`/`user_lng` params.
+2. Split the in-view bodegas using PostGIS:
+   - **Near** (`ST_DWithin(location, user_point, 100)`) → return each as its own row (`point_count = 1`, with `bodega_id`/`name`/`address`), bypassing the grid.
+   - **Far** → grid-aggregate exactly as today.
+3. Return both sets unioned.
+
+Reuses the existing GiST spatial index, stays fast, and keeps the row count bounded (a 100m circle in NYC holds only a handful of bodegas — no risk to the 1,000-row cap). Consistent with the established pattern: geospatial logic lives in RPCs, not the client.
+
+### The make-or-break gotcha: don't double-count
+The far/grid aggregation **must exclude** the near bodegas (a `where not ST_DWithin(...)` in the grid CTE). Otherwise a near bodega is shown as an individual pin **and** still counted inside its grid cell's bubble — producing a phantom duplicate or a wrong count (e.g. a "5" bubble where one of the 5 also sits beside it as a pin). One line, but the easy-to-get-wrong part.
+
+### Smaller considerations
+- **Marker keys:** near pins should be keyed by `bodega_id` (rock-stable across pans); far clusters keep their `gx:gy` key. This is a small cleanup of the current code, where even single-bodega cells are keyed `gx:gy`.
+- **Far-zoom stacking:** zoomed way out, several "always individual" near pins pile onto ~the same pixel. Harmless; ship without a zoom gate first and revisit only if it looks messy.
+- **Client plumbing:** `map.tsx` currently grabs the user's location only once (to center). The feature needs `userCoords` kept in state and passed into the fetch, refetching when the user moves a meaningful distance.
+
+### Scope/sequencing
+Migration `0005` + a modest `map.tsx` change. No conflict with the clustering crash fixes. Low-risk, bounded cost. Queued alongside other UX work; build when prioritized.
+
+---
+
+## 2026-06-15 — Map basemap styling & label control
+
+### Basemap is Apple Maps today; will switch to the Google provider for styling — but not yet
+**Decision:** The map renders via `react-native-maps`, which on iOS hands off to **Apple Maps (MapKit)**. Apple Maps accepts **no custom basemap styling** — no brand colors, and no *selective* control over which other businesses/POIs are labeled (it's all-or-nothing). To get color theming + selective label control, we will switch the map to the **Google provider** (`PROVIDER_GOOGLE`) with a `customMapStyle` JSON. **Deferred:** we do this *after* the core app UX flow is further built out (detail sheet, compass tuning, navigation polish) — not now.
+**Reason:** Option 1 (Google provider) is the smallest change that delivers both stylistic asks — it keeps `react-native-maps` and all existing marker code, adding only a provider prop, a Google Maps API key, and a style JSON. The style JSON can hide `poi.business` labels while keeping context like transit/parks.
+**Alternative considered — MapLibre/Mapbox vector tiles:** the most control (full vector styling, per-layer label toggles, total palette control), but the biggest swap — a new dependency and a styling toolchain to own. Reserved for if we later want a fully bespoke branded map. Not chosen for v1.
+**Trade-off accepted (applies to either option):** Both require a Google/Mapbox/MapTiler API key **and an EAS dev build** — they need native config the bundled Expo Go binary doesn't include. This gives up the "no API key, runs in Expo Go" simplicity that was a stated reason for picking Apple Maps originally (see Initial architecture session). Acceptable for brand control; flagged so the move off Expo Go is a conscious one.
+
+### Interim: hide all Apple Maps POI labels now (`showsPointsOfInterest={false}`)
+**Decision:** Until the provider switch, set `showsPointsOfInterest={false}` on the `MapView` so the basemap shows our bodega markers without the clutter of every other labeled business.
+**Reason:** It's the one styling lever Apple Maps does expose, and it's free + works in Expo Go today. Trade-off: it's all-or-nothing, so we also lose useful context labels (parks, transit). Judged worth it — the app's job is to surface bodegas, and a decluttered map reads cleaner. The selective version (keep transit, hide shops) arrives with the Google provider.
+
+---
+
 ## 2026-06-14 — Map clustering perf/correctness (shipped + device-verified)
 
 ### Map reloads pins via debounced auto-reload, not a manual button
@@ -103,7 +145,7 @@ Landed in `src/app/(tabs)/map.tsx` + migration `0004_clusters_grid_keys.sql`. Th
 
 ### Borough + neighborhood columns
 **Decision:** Store both `borough` and `neighborhood` on each bodega row.
-**Reason:** Borough alone (5 values) is too coarse for filtering and display. Neighborhood (e.g. "Bushwick", "Washington Heights") is more useful to users. Both are derived from coordinates via reverse geocoding during the import step — no runtime cost.
+**Reason:** Borough alone (5 values) is too coarse for filtering and display. Neighborhood (e.g. "Bushwick", "Washington Heights") is more useful to users. Both are derived from coordinates during the import step via local point-in-polygon lookup against NYC Open Data GeoJSON (not a reverse-geocoding API) — free, offline, no rate limits, no runtime cost. See the OSM import session entry above for the datasets and field names.
 
 ---
 
