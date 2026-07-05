@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BodegaMap — System Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 40px 32px;
+      background: #f4f5f7;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      color: #1a1a2e;
+    }
+
+    header {
+      margin-bottom: 28px;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin: 0 0 4px;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 0.85rem;
+      color: #667085;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 36px 32px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+      overflow-x: auto;
+    }
+
+    .mermaid {
+      min-width: 900px;
+    }
+
+    .legend {
+      margin-top: 28px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 0.8rem;
+      color: #555;
+      border-top: 1px solid #eaecf0;
+      padding-top: 20px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-line {
+      width: 28px;
+      height: 2px;
+      background: #666;
+    }
+
+    .legend-line.dashed {
+      background: repeating-linear-gradient(
+        to right, #999 0, #999 4px, transparent 4px, transparent 8px
+      );
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>BodegaMap — Data Flow</h1>
+    <p>System diagram &middot; 2026-07-05</p>
+  </header>
+
+  <div class="card">
+    <div class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {
+  "primaryColor": "#e8f0fe",
+  "primaryTextColor": "#1a1a2e",
+  "primaryBorderColor": "#4a90d9",
+  "lineColor": "#555",
+  "secondaryColor": "#fef9e7",
+  "tertiaryColor": "#f0faf0",
+  "clusterBkg": "#f8f9fb",
+  "clusterBorder": "#d0d5dd"
+}}}%%
+graph LR
+
+  subgraph device["📱  Device Sensors"]
+    GPS["GPS\nwatchPositionAsync\ndistanceInterval: 5m"]
+    Mag["Magnetometer\nwatchHeadingAsync\ncontinuous"]
+  end
+
+  subgraph screens["App Screens"]
+    Compass["Compass Screen\nsrc/app/(tabs)/index.tsx\ndefault tab"]
+    Map["Map Screen\nsrc/app/(tabs)/map.tsx"]
+    Detail["Bodega Detail Sheet\nbodega/[id].tsx\n⬜ not built yet"]
+  end
+
+  subgraph lib["App Library"]
+    GeoLib["geo.ts\nbearing · haversine\ndistance formatting"]
+    Queries["queries.ts\nfetchNearestBodega\nfetchBodegaClusters"]
+    SupaClient["supabase.ts\nclient · supabase.rpc()"]
+  end
+
+  subgraph supabase["☁️  Supabase  ·  PostgreSQL + PostGIS"]
+    NearbyRPC["nearby_bodegas\nlat, lng, limit=1\nordered by ST_Distance"]
+    ClustersRPC["bodegas_clusters\nbbox + grid size\ngrid-aggregated clusters"]
+    BboxRPC["bodegas_in_bbox\nbbox\n— built, not used by app —"]
+    Bodegas[("bodegas\n3,495 rows\nRLS: active rows only")]
+    Suggestions[("suggestions\n⬜ empty\nfuture: user submissions")]
+  end
+
+  subgraph external["External"]
+    OSM["OpenStreetMap\nOverpass API"]
+    GMaps["Google Maps\ndeep link\nno API call"]
+  end
+
+  GPS -->|"every 5m of movement"| Compass
+  GPS -->|"once on load\nto center map"| Map
+  Mag -->|"continuous"| Compass
+
+  Compass --> GeoLib
+  Compass -->|"re-query if moved >25m"| Queries
+  Map -->|"on viewport settle\ndebounced 400ms"| Queries
+
+  Queries --> SupaClient
+  SupaClient --> NearbyRPC
+  SupaClient --> ClustersRPC
+  SupaClient -. "unused" .-> BboxRPC
+
+  NearbyRPC --> Bodegas
+  ClustersRPC --> Bodegas
+  BboxRPC -.-> Bodegas
+
+  Detail -->|"name + address + coords\nconstructed URL"| GMaps
+
+  OSM -->|"scripts/import_osm.py\none-time · periodic refresh"| Bodegas
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-line"></div>
+        <span>Active data flow</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-line dashed"></div>
+        <span>Built but unused / future</span>
+      </div>
+      <div class="legend-item">
+        <span>⬜ = not yet built</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      flowchart: { curve: 'basis', padding: 20 },
+    });
+  </script>
+
+</body>
+</html>
