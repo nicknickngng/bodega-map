@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CategoryChips } from '@/components/CategoryChips';
 import { useAppState } from '@/lib/app-state';
 import { categoryConfig, placeLabel } from '@/lib/categories';
 import { cityConfig } from '@/lib/cities';
@@ -13,24 +14,30 @@ import { useNearestPlace } from '@/lib/nearest';
 import { fetchPlaceClusters } from '@/lib/queries';
 import type { PlaceCluster } from '@/types/place';
 
-// Roughly how many grid cells span the viewport's larger dimension. Higher =
-// finer clusters (more, smaller bubbles). The returned row count is bounded by
-// ~CELLS_ACROSS² per category, so it stays well under the 1000-row server cap.
-// Kept coarse (was 14) so fewer custom-view markers are on screen at once —
-// each one is a native iOS annotation, and the marker set is the memory
-// bottleneck. Phase 3 adds a marker budget across categories.
+// Roughly how many grid cells span the viewport's larger dimension, for ONE
+// category. Higher = finer clusters (more, smaller bubbles). Kept coarse (was
+// 14) because each custom-view marker is a native iOS annotation and the marker
+// set is the memory bottleneck (the map crashed at ~150-200).
 const CELLS_ACROSS = 9;
+// Marker budget across categories: each category gets its own bubbles, so with
+// n categories on we shrink the grid by sqrt(n) to keep the total near
+// CELLS_ACROSS² (~81) instead of n times that. Never coarser than MIN_CELLS.
+const MIN_CELLS_ACROSS = 4;
+function cellsAcross(categoryCount: number): number {
+  return Math.max(MIN_CELLS_ACROSS, Math.round(CELLS_ACROSS / Math.sqrt(Math.max(1, categoryCount))));
+}
 
 // Wait this long after the viewport stops moving before refetching, so a rapid
 // pan/zoom coalesces into a single request instead of one per intermediate frame.
 const RELOAD_DEBOUNCE_MS = 400;
 
-function gridForRegion(r: Region): number {
-  return Math.max(r.latitudeDelta, r.longitudeDelta) / CELLS_ACROSS;
+function gridForRegion(r: Region, categoryCount: number): number {
+  return Math.max(r.latitudeDelta, r.longitudeDelta) / cellsAcross(categoryCount);
 }
 
 export default function MapScreen() {
-  const { city, mapFilter, compassCategory } = useAppState();
+  const { city, cityCategories, categories, toggleCategory, mapFilter, compassCategory } =
+    useAppState();
   const { coords, gpsCoords, spoofedCoords, setSpoofedCoords } = useUserLocation();
   // Same target as the compass; the map draws a dotted guide line to it.
   const { nearest } = useNearestPlace();
@@ -103,7 +110,7 @@ export default function MapScreen() {
           minLng: r.longitude - r.longitudeDelta / 2,
           maxLng: r.longitude + r.longitudeDelta / 2,
         },
-        gridForRegion(r),
+        gridForRegion(r, mapFilter.categories.length),
         mapFilter,
       );
       if (reqId !== requestIdRef.current) return; // a newer fetch superseded this one
@@ -199,8 +206,7 @@ export default function MapScreen() {
             <Marker
               key={key}
               coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
-              // Default pin for now (no visible change in Phase 2); Phase 3
-              // colors pins by category once there's more than one.
+              pinColor={cat.color}
               title={placeLabel(c)}
               description={c.name ? (c.address ?? undefined) : undefined}
             />
@@ -239,8 +245,18 @@ export default function MapScreen() {
         ) : null}
       </MapView>
 
+      {/* Category filter (multi-select). Moves down while the dev spoof banner shows. */}
+      {cityCategories.length > 1 ? (
+        <CategoryChips
+          options={cityCategories}
+          selected={categories}
+          onPress={toggleCategory}
+          style={[styles.chips, { top: insets.top + (spoofedCoords ? 56 : 8) }]}
+        />
+      ) : null}
+
       {errorMsg ? (
-        <View style={[styles.banner, { top: insets.top + 56 }]}>
+        <View style={[styles.banner, { top: insets.top + 104 }]}>
           <Text style={styles.bannerText}>{errorMsg}</Text>
         </View>
       ) : null}
@@ -285,6 +301,12 @@ function ClusterBubble({ count, color }: { count: number; color: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  chips: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    flexGrow: 0,
   },
   bubble: {
     opacity: 0.92,

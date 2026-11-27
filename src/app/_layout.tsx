@@ -8,8 +8,9 @@ import { NearestProvider } from '@/lib/nearest';
 
 export default function RootLayout() {
   return (
-    <AppStateProvider>
-      <LocationProvider>
+    <LocationProvider>
+      {/* Inside LocationProvider: the current city follows the user's location. */}
+      <AppStateProvider>
         <NearestProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
@@ -18,7 +19,7 @@ export default function RootLayout() {
           <SpoofBanner />
           <StatusBar style="auto" />
         </NearestProvider>
-      </LocationProvider>
-    </AppStateProvider>
+      </AppStateProvider>
+    </LocationProvider>
   );
 }
