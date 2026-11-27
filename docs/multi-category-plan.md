@@ -70,6 +70,8 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 
 ## Phase 2 — Generalize the app (no visible change)
 
+**Status (2026-11-27): PR open.** App uses `nearby_places` / `places_clusters` with city `nyc` and category `bodega`; shared `AppStateProvider` (city, map categories, compass category) and `LocationProvider` (one GPS subscription, plus the dev location override); `src/lib/categories.ts` and `src/lib/cities.ts` registries; `placeLabel()` for nameless places. **Also added: a dev location-spoofing tool** (map button "DEV: set location", then tap the map; purple banner on every screen while active). It's on in development and wherever `EXPO_PUBLIC_DEV_TOOLS=1` (EAS `development` and `preview` environments), never in production/TestFlight. The old bodega RPCs can be dropped once no published update uses them.
+
 - `src/types/bodega.ts` → `src/types/place.ts` (`Place`, `NearbyPlace`, `PlaceCluster`).
 - New `src/lib/categories.ts`: one config entry per category (slug, label, icon, color, display order). It's the single place a new category gets registered in the app.
 - New `src/lib/cities.ts` (or read the `cities` table): a current-city setting. For this phase it's fixed to `nyc`.

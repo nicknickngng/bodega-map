@@ -1,68 +1,63 @@
 import { supabase } from '@/lib/supabase';
-import type { Bodega, BodegaCluster, NearbyBodega } from '@/types/bodega';
+import type { CategorySlug, CitySlug, NearbyPlace, PlaceCluster } from '@/types/place';
+
+export type Bounds = { minLat: number; minLng: number; maxLat: number; maxLng: number };
+
+export type PlaceFilter = {
+  city: CitySlug;
+  /** Empty = all categories. */
+  categories: CategorySlug[];
+};
 
 /**
- * Nearest active bodegas to a point, ordered by distance.
- * Wraps the `nearby_bodegas` PostGIS RPC. The compass uses limit 1.
+ * Nearest active places to a point within one city, ordered by distance.
+ * Wraps the `nearby_places` PostGIS RPC.
  */
-export async function fetchNearbyBodegas(
+export async function fetchNearbyPlaces(
   lat: number,
   lng: number,
+  filter: PlaceFilter,
   limit = 20,
-): Promise<NearbyBodega[]> {
-  const { data, error } = await supabase.rpc('nearby_bodegas', {
+): Promise<NearbyPlace[]> {
+  const { data, error } = await supabase.rpc('nearby_places', {
     user_lat: lat,
     user_lng: lng,
+    p_city: filter.city,
+    p_categories: filter.categories,
     max_results: limit,
   });
   if (error) throw error;
-  return (data ?? []) as NearbyBodega[];
+  return (data ?? []) as NearbyPlace[];
 }
 
-/** Convenience: the single closest bodega, or null if none. */
-export async function fetchNearestBodega(
+/** Convenience: the single closest place, or null if none. */
+export async function fetchNearestPlace(
   lat: number,
   lng: number,
-): Promise<NearbyBodega | null> {
-  const results = await fetchNearbyBodegas(lat, lng, 1);
+  filter: PlaceFilter,
+): Promise<NearbyPlace | null> {
+  const results = await fetchNearbyPlaces(lat, lng, filter, 1);
   return results[0] ?? null;
 }
 
 /**
- * Active bodegas within a map viewport bounding box.
- * Wraps the `bodegas_in_bbox` PostGIS RPC.
+ * Grid clusters for the map viewport, one set per category. Wraps the
+ * `places_clusters` RPC. `grid` is the cell size in degrees (smaller = finer).
  */
-export async function fetchBodegasInBbox(bounds: {
-  minLat: number;
-  minLng: number;
-  maxLat: number;
-  maxLng: number;
-}): Promise<Bodega[]> {
-  const { data, error } = await supabase.rpc('bodegas_in_bbox', {
-    min_lat: bounds.minLat,
-    min_lng: bounds.minLng,
-    max_lat: bounds.maxLat,
-    max_lng: bounds.maxLng,
-  });
-  if (error) throw error;
-  return (data ?? []) as Bodega[];
-}
-
-/**
- * Grid-clustered bodegas for the map viewport. Wraps the `bodegas_clusters`
- * RPC. `grid` is the cell size in degrees (smaller = finer clusters).
- */
-export async function fetchBodegaClusters(
-  bounds: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+export async function fetchPlaceClusters(
+  bounds: Bounds,
   grid: number,
-): Promise<BodegaCluster[]> {
-  const { data, error } = await supabase.rpc('bodegas_clusters', {
+  filter: PlaceFilter,
+): Promise<PlaceCluster[]> {
+  const { data, error } = await supabase.rpc('places_clusters', {
     min_lat: bounds.minLat,
     min_lng: bounds.minLng,
     max_lat: bounds.maxLat,
     max_lng: bounds.maxLng,
     grid,
+    p_city: filter.city,
+    p_categories: filter.categories,
   });
   if (error) throw error;
-  return (data ?? []) as BodegaCluster[];
+  return (data ?? []) as PlaceCluster[];
 }

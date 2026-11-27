@@ -41,6 +41,12 @@ Scan the QR code with your iPhone camera.
 
 `--tunnel` uses Expo's own tunnel, so it works on networks like Harvard Wi-Fi that block phone-to-laptop connections.
 
+## Testing another location (dev tool)
+
+On the **Map** tab, tap **DEV: set location**, then tap anywhere on the map. The compass and map then act as if you're standing there, and a purple "DEV: spoofed location" banner shows on every screen. Tap **Use GPS** in the banner to go back to real GPS. The compass still uses your phone's real heading.
+
+Available when running from a dev server and in updates/builds from the EAS `development` and `preview` environments (`EXPO_PUBLIC_DEV_TOOLS=1`). Never in TestFlight/production.
+
 ## Publishing an update for testers
 
 From an up-to-date checkout (signed in to the Expo CLI as a project member):
