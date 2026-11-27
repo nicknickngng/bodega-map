@@ -1,24 +1,23 @@
-import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, type Region } from 'react-native-maps';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { fetchBodegaClusters } from '@/lib/queries';
-import type { BodegaCluster } from '@/types/bodega';
-
-// Fallback view: the golden-set cluster on the Upper East Side.
-const DEFAULT_REGION: Region = {
-  latitude: 40.7702,
-  longitude: -73.9553,
-  latitudeDelta: 0.02,
-  longitudeDelta: 0.02,
-};
+import { useAppState } from '@/lib/app-state';
+import { categoryConfig, placeLabel } from '@/lib/categories';
+import { cityConfig } from '@/lib/cities';
+import { DEV_TOOLS_ENABLED } from '@/lib/dev-tools';
+import { useUserLocation } from '@/lib/location';
+import { fetchPlaceClusters } from '@/lib/queries';
+import type { PlaceCluster } from '@/types/place';
 
 // Roughly how many grid cells span the viewport's larger dimension. Higher =
 // finer clusters (more, smaller bubbles). The returned row count is bounded by
-// ~CELLS_ACROSS², so it stays well under the 1000-row server cap. Kept coarse
-// (was 14) so fewer custom-view markers are on screen at once — each one is a
-// native iOS annotation, and the marker set is the memory bottleneck.
+// ~CELLS_ACROSS² per category, so it stays well under the 1000-row server cap.
+// Kept coarse (was 14) so fewer custom-view markers are on screen at once —
+// each one is a native iOS annotation, and the marker set is the memory
+// bottleneck. Phase 3 adds a marker budget across categories.
 const CELLS_ACROSS = 9;
 
 // Wait this long after the viewport stops moving before refetching, so a rapid
@@ -30,9 +29,22 @@ function gridForRegion(r: Region): number {
 }
 
 export default function MapScreen() {
-  const [region, setRegion] = useState<Region>(DEFAULT_REGION);
-  const [clusters, setClusters] = useState<BodegaCluster[]>([]);
+  const { city, mapFilter } = useAppState();
+  const { coords, spoofedCoords, setSpoofedCoords } = useUserLocation();
+  const insets = useSafeAreaInsets();
+
+  const cityDefaults = cityConfig(city);
+  const initialRegion: Region = {
+    ...cityDefaults.center,
+    latitudeDelta: cityDefaults.delta,
+    longitudeDelta: cityDefaults.delta,
+  };
+
+  const [region, setRegion] = useState<Region>(initialRegion);
+  const [clusters, setClusters] = useState<PlaceCluster[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Dev tool: while true, the next tap on the map sets the spoofed location.
+  const [pickingLocation, setPickingLocation] = useState(false);
   // Custom-view markers must "track view changes" to rasterize their content,
   // but doing so continuously is the memory sink. We turn tracking on for one
   // beat after each cluster update (so bubbles render their count) then off.
@@ -44,35 +56,37 @@ export default function MapScreen() {
   const requestIdRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Center on the user once, on first load.
+  function centerOn(lat: number, lng: number) {
+    mapRef.current?.animateToRegion(
+      {
+        latitude: lat,
+        longitude: lng,
+        latitudeDelta: cityDefaults.delta,
+        longitudeDelta: cityDefaults.delta,
+      },
+      400,
+    );
+  }
+
+  // Center on the user once, when their location first arrives.
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return; // map still works centered on the default region
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      if (!didCenterOnUser.current) {
-        didCenterOnUser.current = true;
-        mapRef.current?.animateToRegion(
-          {
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: DEFAULT_REGION.latitudeDelta,
-            longitudeDelta: DEFAULT_REGION.longitudeDelta,
-          },
-          400,
-        );
-      }
-    })().catch(() => {
-      /* non-fatal: fall back to the default region */
-    });
-  }, []);
+    if (coords && !didCenterOnUser.current) {
+      didCenterOnUser.current = true;
+      centerOn(coords.lat, coords.lng);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords]);
+
+  // Jump to a newly spoofed location.
+  useEffect(() => {
+    if (spoofedCoords) centerOn(spoofedCoords.lat, spoofedCoords.lng);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spoofedCoords]);
 
   async function loadClusters(r: Region) {
     const reqId = ++requestIdRef.current;
     try {
-      const data = await fetchBodegaClusters(
+      const data = await fetchPlaceClusters(
         {
           minLat: r.latitude - r.latitudeDelta / 2,
           maxLat: r.latitude + r.latitudeDelta / 2,
@@ -80,13 +94,14 @@ export default function MapScreen() {
           maxLng: r.longitude + r.longitudeDelta / 2,
         },
         gridForRegion(r),
+        mapFilter,
       );
       if (reqId !== requestIdRef.current) return; // a newer fetch superseded this one
       setClusters(data);
       setErrorMsg(null);
     } catch (e: any) {
       if (reqId !== requestIdRef.current) return;
-      setErrorMsg(e?.message ?? 'Could not load bodegas.');
+      setErrorMsg(e?.message ?? 'Could not load places.');
     }
   }
 
@@ -95,6 +110,19 @@ export default function MapScreen() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => loadClusters(r), RELOAD_DEBOUNCE_MS);
   }
+
+  // Refetch when the city or category filter changes (Phase 3 adds the UI).
+  // Skips the first run: onMapReady does the initial load.
+  const filterKey = `${mapFilter.city}|${mapFilter.categories.join(',')}`;
+  const firstFilterRun = useRef(true);
+  useEffect(() => {
+    if (firstFilterRun.current) {
+      firstFilterRun.current = false;
+      return;
+    }
+    scheduleLoad(region);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
 
   // After each cluster update, briefly let markers re-rasterize so bubbles show
   // their (possibly changed) count, then stop tracking to cap memory churn.
@@ -114,7 +142,7 @@ export default function MapScreen() {
 
   // Zoom in toward a tapped cluster; the resulting region change reloads at a
   // finer grid, so the cluster splits apart.
-  function zoomToCluster(c: BodegaCluster) {
+  function zoomToCluster(c: PlaceCluster) {
     mapRef.current?.animateToRegion(
       {
         latitude: c.cluster_lat,
@@ -131,56 +159,94 @@ export default function MapScreen() {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        initialRegion={DEFAULT_REGION}
-        showsUserLocation
+        initialRegion={initialRegion}
+        // While spoofing, hide the real blue dot; the spoofed pin replaces it.
+        showsUserLocation={!spoofedCoords}
         showsMyLocationButton
         // Hide Apple Maps' own business/POI labels so the map reads as just our
-        // bodegas. All-or-nothing on Apple Maps (also drops parks/transit labels);
-        // selective control arrives with the planned Google-provider switch. See
-        // docs/decisions.md (2026-06-15, basemap styling).
+        // places. All-or-nothing on Apple Maps (also drops parks/transit labels);
+        // see docs/decisions.md (2026-06-15, basemap styling).
         showsPointsOfInterests={false}
+        onPress={(e) => {
+          if (!pickingLocation) return;
+          const { latitude, longitude } = e.nativeEvent.coordinate;
+          setSpoofedCoords({ lat: latitude, lng: longitude });
+          setPickingLocation(false);
+        }}
         onRegionChangeComplete={(r) => {
           setRegion(r);
           scheduleLoad(r);
         }}
         onMapReady={() => loadClusters(region)}>
-        {clusters.map((c) =>
-          c.point_count === 1 ? (
+        {clusters.map((c) => {
+          const cat = categoryConfig(c.category);
+          const key = `${c.category}:${c.gx}:${c.gy}`;
+          return c.point_count === 1 ? (
             <Marker
-              key={`${c.gx}:${c.gy}`}
+              key={key}
               coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
-              title={c.name ?? 'Bodega'}
-              description={c.address ?? undefined}
+              // Default pin for now (no visible change in Phase 2); Phase 3
+              // colors pins by category once there's more than one.
+              title={placeLabel(c)}
+              description={c.name ? (c.address ?? undefined) : undefined}
             />
           ) : (
             <Marker
-              key={`${c.gx}:${c.gy}`}
+              key={key}
               coordinate={{ latitude: c.cluster_lat, longitude: c.cluster_lng }}
               onPress={() => zoomToCluster(c)}
               tracksViewChanges={tracksChanges}>
-              <ClusterBubble count={c.point_count} />
+              <ClusterBubble count={c.point_count} color={cat.color} />
             </Marker>
-          ),
-        )}
+          );
+        })}
+        {spoofedCoords ? (
+          <Marker
+            key="spoofed-location"
+            coordinate={{ latitude: spoofedCoords.lat, longitude: spoofedCoords.lng }}
+            pinColor="#7C3AED"
+            title="Spoofed location (dev)"
+          />
+        ) : null}
       </MapView>
 
       {errorMsg ? (
-        <View style={styles.banner}>
+        <View style={[styles.banner, { top: insets.top + 56 }]}>
           <Text style={styles.bannerText}>{errorMsg}</Text>
+        </View>
+      ) : null}
+
+      {DEV_TOOLS_ENABLED ? (
+        <View style={[styles.devTools, { bottom: 24 }]}>
+          {pickingLocation ? (
+            <Text style={styles.devHint}>Tap the map to set your location</Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              pickingLocation ? 'Cancel picking a location' : 'Dev tool: set a spoofed location'
+            }
+            onPress={() => setPickingLocation((p) => !p)}
+            style={[styles.devButton, pickingLocation && styles.devButtonActive]}>
+            <Ionicons name={pickingLocation ? 'close' : 'locate'} size={18} color="#fff" />
+            <Text style={styles.devButtonText}>
+              {pickingLocation ? 'Cancel' : 'DEV: set location'}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
     </View>
   );
 }
 
-function ClusterBubble({ count }: { count: number }) {
+function ClusterBubble({ count, color }: { count: number; color: string }) {
   // Scale the bubble a little with magnitude so dense cells read as bigger.
   const size = count >= 100 ? 56 : count >= 10 ? 48 : 40;
   return (
     <View
       style={[
         styles.bubble,
-        { width: size, height: size, borderRadius: size / 2 },
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: color },
       ]}>
       <Text style={styles.bubbleText}>{count}</Text>
     </View>
@@ -192,7 +258,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bubble: {
-    backgroundColor: 'rgba(32,138,239,0.92)',
+    opacity: 0.92,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
@@ -205,7 +271,6 @@ const styles = StyleSheet.create({
   },
   banner: {
     position: 'absolute',
-    top: 60,
     left: 16,
     right: 16,
     backgroundColor: 'rgba(176,0,32,0.9)',
@@ -216,5 +281,37 @@ const styles = StyleSheet.create({
   bannerText: {
     color: '#fff',
     textAlign: 'center',
+  },
+  devTools: {
+    position: 'absolute',
+    left: 16,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  devHint: {
+    backgroundColor: 'rgba(17,17,17,0.85)',
+    color: '#fff',
+    fontSize: 13,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  devButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(124,58,237,0.9)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  devButtonActive: {
+    backgroundColor: 'rgba(17,17,17,0.9)',
+  },
+  devButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });
