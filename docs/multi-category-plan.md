@@ -44,6 +44,8 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 
 ## Phase 1 — Generalize the database (migration `0005`)
 
+**Status (2026-11-27): applied to the live project** via `npx supabase db push` (`supabase/migrations/0005_places_multi_city.sql`). Verified through the public API: 3,496 rows, all `nyc`/`bodega`; `nearby_places` and `places_clusters` match the old RPCs for 3 points and 3 viewports; old RPCs unchanged; `greater-boston` returns nothing. The old bodega RPCs now read from `places` and get dropped after Phase 2.
+
 **Schema**
 - Rename `bodegas` → `places` (`alter table ... rename`). The data, the spatial index and the RLS policy all carry over.
 - Add `category text not null default 'bodega'`, then backfill every existing row as `'bodega'`.
