@@ -1,29 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppState } from '@/lib/app-state';
 import { categoryConfig, placeLabel } from '@/lib/categories';
-import { bearingBetween, formatDistance, haversineMeters } from '@/lib/geo';
-import { useUserLocation, type Coords } from '@/lib/location';
-import { fetchNearestPlace } from '@/lib/queries';
-import type { NearbyPlace } from '@/types/place';
-
-// Don't re-query the database for every GPS tick — only after meaningful movement.
-const REFETCH_DISTANCE_M = 25;
+import { bearingBetween, formatDistance } from '@/lib/geo';
+import { useUserLocation } from '@/lib/location';
+import { useNearestPlace } from '@/lib/nearest';
 
 export default function CompassScreen() {
-  const { city, compassCategory } = useAppState();
+  const { compassCategory } = useAppState();
   const { coords, permission, error: locationError } = useUserLocation();
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Shared with the map's guide line (src/lib/nearest.tsx).
+  const { nearest, error: errorMsg } = useNearestPlace();
   const [heading, setHeading] = useState<number | null>(null);
-  // undefined = still loading; null = nothing of this category in this city.
-  const [nearest, setNearest] = useState<NearbyPlace | null | undefined>(undefined);
-  // Where and for what we last queried; a new city/category always refetches.
-  const lastFetchRef = useRef<{ at: Coords; key: string } | null>(null);
-  const requestIdRef = useRef(0);
   const label = categoryConfig(compassCategory).label;
 
   // Device heading (magnetometer).
@@ -47,32 +39,6 @@ export default function CompassScreen() {
       sub?.remove();
     };
   }, [permission]);
-
-  // Nearest place, refetched after meaningful movement or a filter change.
-  useEffect(() => {
-    if (!coords) return;
-    const key = `${city}|${compassCategory}`;
-    const last = lastFetchRef.current;
-    if (
-      last &&
-      last.key === key &&
-      haversineMeters(last.at.lat, last.at.lng, coords.lat, coords.lng) < REFETCH_DISTANCE_M
-    ) {
-      return;
-    }
-    lastFetchRef.current = { at: coords, key };
-    const reqId = ++requestIdRef.current;
-    fetchNearestPlace(coords.lat, coords.lng, { city, categories: [compassCategory] })
-      .then((p) => {
-        if (reqId !== requestIdRef.current) return; // superseded by a newer query
-        setNearest(p);
-        setErrorMsg(null);
-      })
-      .catch((e: any) => {
-        if (reqId !== requestIdRef.current) return;
-        setErrorMsg(e?.message ?? `Could not load nearby places.`);
-      });
-  }, [coords, city, compassCategory]);
 
   const shownError =
     errorMsg ??
