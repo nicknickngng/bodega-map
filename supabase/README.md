@@ -16,6 +16,8 @@ supabase/
 
 ## Applying it
 
+> **In use since 2026-11-27: Option B (Supabase CLI).** The CLI is a dev dependency (`npx supabase ...`), the live project is linked, and 0001-0004 were recorded as applied with `migration repair`. Apply new migrations with `npx supabase db push --remote`. Don't run migration SQL in the dashboard anymore, or the CLI's history will drift.
+
 Run the migrations **in numeric order**, then `seed.sql`. Pick **one** of the two methods below and use it consistently — don't mix them on the same project (the dashboard runs SQL untracked; the CLI tracks which migrations have been applied, and running the same SQL by hand will desync that tracking).
 
 > **0004 depends on 0003.** It drops and recreates `bodegas_clusters` (adding `gx`/`gy` changes the return type, which `create or replace` can't do — Postgres errors `42P13`). It must run *after* 0003.
