@@ -7,7 +7,7 @@
 - ✅ Supabase SQL built + **applied to the live project** (schema, RPCs, golden-set seed)
 - ✅ GitHub linked & pushed: github.com/nicknickngng/bodega-map
 - ✅ Expo app scaffolded (SDK 54, Expo Router, TypeScript), `src/app/(tabs)`
-  - Pinned to SDK 54 to match the public Expo Go release (SDK 56 wasn't supported in Expo Go)
+  - Upgraded to SDK 58 on 2026-11-25 to match the App Store's Expo Go (see `decisions.md`). Team phone-testing setup: `team-testing.md`
 - ✅ Compass + Map screens built; iOS bundle exports cleanly (`npx expo export -p ios`)
 - ✅ Map clustering: `bodegas_clusters` RPC + count-bubble UI; migration `0003` applied
 - ✅ Runs on a physical iPhone via `npx expo start --tunnel` (LAN blocked by network; tunnel is flaky — retry / use iPhone hotspot + LAN as fallback)
