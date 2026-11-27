@@ -4,6 +4,20 @@ Running log of architectural and product decisions. Add new entries at the top.
 
 ---
 
+## 2026-11-25 — Expo SDK 58 upgrade + team testing via EAS Update
+
+### Upgraded Expo SDK 54 → 58
+**Decision:** Upgrade the project to SDK 58 (React Native 0.88, react-native-maps 1.29) rather than jump to a development build.
+**Reason:** The App Store's Expo Go only runs the newest SDK; on SDK 54 it crashed on load. Upgrading restores the free Expo Go workflow for the whole team and was needed before any App Store/TestFlight build anyway. Code changes were small: `showsPointsOfInterest` was renamed `showsPointsOfInterests` in react-native-maps, plus a tab-icon color type fix. react-native-maps now also supports `pointsOfInterestFilter`, which gives selective Apple Maps label control. That's worth revisiting before the Google-provider switch.
+**Device-verified:** app opens and runs on iPhone via Expo Go.
+
+### Teammates test via published EAS Updates; coders run their own dev server
+**Decision:** Link the project to EAS (`@nicknickngng/bodegamap`), install `expo-updates`, store the public Supabase settings as EAS environment variables, and publish test versions with `eas update --branch preview --environment preview`. Testers open them in Expo Go from the dashboard's Preview QR code. Verified working for the project owner on iPhone.
+**Reason:** Since SDK 58, Expo Go on a physical iPhone only opens a dev-server project if Expo Go and the Expo CLI are signed in to the same Expo account, so teammates cannot scan someone else's dev server. Published updates aren't subject to that check and need no laptop running.
+**Confirmed (same day):** a non-member's account could **not** open the published update; access requires project membership. So the project moved to the `bodegamap` Expo organization (2026-11-27); a Viewer-role member opening the update was confirmed. TestFlight is the route for anyone outside the team. Development builds or TestFlight ($99/yr Apple Developer account) remain the path once native modules (custom basemap) arrive. See `docs/team-testing.md`.
+
+---
+
 ## 2026-06-15 — Don't-cluster-near-the-user map feature (queued, not built)
 
 ### Bodegas within 100m of the user always render as individual pins, never folded into a count bubble

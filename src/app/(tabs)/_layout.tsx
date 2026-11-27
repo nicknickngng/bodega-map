@@ -9,12 +9,14 @@ export default function TabsLayout() {
         tabBarActiveTintColor: '#208AEF',
       }}>
       {/* Compass is the default landing tab (see docs/decisions.md). */}
+      {/* Icon colors: the tab bar types `color` as any RN ColorValue, but it is the
+          string tint set above; Ionicons only accepts strings. */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Compass',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="compass" size={size} color={color} />
+            <Ionicons name="compass" size={size} color={color as string} />
           ),
         }}
       />
@@ -23,7 +25,7 @@ export default function TabsLayout() {
         options={{
           title: 'Map',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="map" size={size} color={color} />
+            <Ionicons name="map" size={size} color={color as string} />
           ),
         }}
       />
