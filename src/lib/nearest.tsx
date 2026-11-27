@@ -53,7 +53,10 @@ export function NearestProvider({ children }: { children: ReactNode }) {
     if (last && last.key === key && moved < REFETCH_DISTANCE_M) return;
 
     // A new filter or a big jump makes the old answer wrong: show loading.
-    if (!last || last.key !== key || moved >= RESET_DISTANCE_M) setNearest(undefined);
+    if (!last || last.key !== key || moved >= RESET_DISTANCE_M) {
+      setNearest(undefined);
+      setError(null); // an old error would otherwise hide the loading state
+    }
 
     lastFetchRef.current = { at: coords, key };
     const reqId = ++requestIdRef.current;

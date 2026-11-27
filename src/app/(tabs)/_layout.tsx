@@ -3,6 +3,8 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
 
+import { CityTabBar } from '@/components/CityTabBar';
+
 const ACTIVE_TINT = '#208AEF';
 
 type IoniconName = ComponentProps<typeof Ionicons>['name'];
@@ -26,6 +28,8 @@ function tabIcon(name: IoniconName) {
 export default function TabsLayout() {
   return (
     <Tabs
+      // Compass | City: <name> | Map
+      tabBar={(props) => <CityTabBar {...props} />}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: ACTIVE_TINT,

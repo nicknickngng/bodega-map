@@ -20,6 +20,7 @@ export type CategoryConfig = {
 
 export const CATEGORIES: CategoryConfig[] = [
   { slug: 'bodega', label: 'bodega', title: 'Bodegas', icon: 'storefront', color: '#208AEF' },
+  { slug: 'bike_rack', label: 'bike rack', title: 'Bike racks', icon: 'bicycle', color: '#16A34A' },
 ];
 
 const BY_SLUG = new Map(CATEGORIES.map((c) => [c.slug, c]));

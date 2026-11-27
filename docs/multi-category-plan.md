@@ -105,6 +105,14 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 
 ## Phase 3 — Boston: bike racks + hospitals with ERs
 
+**Status (2026-11-27): minimum done, PR open; hospitals not imported.**
+- Migration `0006` adds the `greater-boston` city (Boston + Cambridge).
+- Imported: **1,424 Boston bike racks** (100 duplicate records merged), **2,668 Cambridge bike racks**, **202 Boston + Cambridge bodegas** (OSM `shop=convenience`, named only). Points outside both city boundaries are dropped. Scripts: `scripts/import_arcgis.py`, `scripts/import_osm.py`, shared `scripts/places_common.py`.
+- App: current city follows the user's (or spoofed) location; map category chips (multi-select); compass category picker; pins and bubbles colored by category; guide line follows the compass category.
+- Marker budget: the grid shrinks by sqrt(number of categories on), never below 4 cells across. Measured on Greater Boston with both categories: 41 / 75 / 31 markers at spans of 0.02 / 0.08 / 0.25 degrees (was crashing at ~150-200).
+- **Not done:** lighter image markers (bubbles show counts, which needs a rendered image per count; revisit if the stress test shows a problem). **The 10-category stress test is not done**: it needs a development build (Apple enrollment pending). Hospitals with ERs wait on the official-list cross-check (#2).
+- Open research: what counts as a bodega in Boston (#10), Boston racks with QTY 0 (#11).
+
 **City handling**
 - Add a `greater-boston` row to `cities`, with a bounding box and center covering Boston + Cambridge (the center somewhere between downtown and Harvard Square).
 - Current city is chosen automatically: whichever city's bounding box contains the user, falling back to a manual city picker. This also lets you test NYC from Cambridge.

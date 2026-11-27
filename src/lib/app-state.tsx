@@ -1,21 +1,29 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
-import { CATEGORIES } from '@/lib/categories';
-import { DEFAULT_CITY } from '@/lib/cities';
+import { cityConfig, cityForCoords, DEFAULT_CITY } from '@/lib/cities';
+import { useUserLocation } from '@/lib/location';
 import type { PlaceFilter } from '@/lib/queries';
 import type { CategorySlug, CitySlug } from '@/types/place';
 
 /**
- * App-wide view settings shared by the compass and map: which city we're in and
- * which categories are shown. Phase 3 adds the UI to change them (city chosen
- * from the user's location, category chips, compass category picker).
+ * App-wide view settings shared by the compass and map: which city we're in
+ * (picked from the user's or spoofed location), which categories the map shows,
+ * and which category the compass points to.
  */
 type AppState = {
   city: CitySlug;
-  setCity: (c: CitySlug) => void;
-  /** Categories shown on the map. */
+  /** Categories available in the current city, in display order. */
+  cityCategories: CategorySlug[];
+  /** Categories shown on the map (a subset of cityCategories, never empty). */
   categories: CategorySlug[];
-  setCategories: (c: CategorySlug[]) => void;
+  toggleCategory: (c: CategorySlug) => void;
   /** Category the compass points to. */
   compassCategory: CategorySlug;
   setCompassCategory: (c: CategorySlug) => void;
@@ -25,22 +33,42 @@ type AppState = {
 
 const AppStateContext = createContext<AppState | null>(null);
 
+/** Must be inside <LocationProvider>: the city follows the user's location. */
 export function AppStateProvider({ children }: { children: ReactNode }) {
+  const { coords } = useUserLocation();
   const [city, setCity] = useState<CitySlug>(DEFAULT_CITY);
-  const [categories, setCategories] = useState<CategorySlug[]>(CATEGORIES.map((c) => c.slug));
-  const [compassCategory, setCompassCategory] = useState<CategorySlug>(CATEGORIES[0].slug);
+  const cityCategories = cityConfig(city).categories;
+  const [categories, setCategories] = useState<CategorySlug[]>(cityCategories);
+  const [compassCategory, setCompassCategory] = useState<CategorySlug>(cityCategories[0]);
+
+  // Switch city when the user (or the spoofed location) enters another city's
+  // box. Outside every city, keep the last one.
+  useEffect(() => {
+    if (!coords) return;
+    const next = cityForCoords(coords.lat, coords.lng);
+    if (next && next !== city) {
+      const nextCategories = cityConfig(next).categories;
+      setCity(next);
+      setCategories(nextCategories);
+      setCompassCategory((cur) => (nextCategories.includes(cur) ? cur : nextCategories[0]));
+    }
+  }, [coords, city]);
 
   const value = useMemo<AppState>(
     () => ({
       city,
-      setCity,
+      cityCategories,
       categories,
-      setCategories,
+      toggleCategory: (c) =>
+        setCategories((cur) => {
+          if (cur.includes(c)) return cur.length > 1 ? cur.filter((x) => x !== c) : cur; // keep one on
+          return cityCategories.filter((x) => x === c || cur.includes(x)); // keep display order
+        }),
       compassCategory,
       setCompassCategory,
       mapFilter: { city, categories },
     }),
-    [city, categories, compassCategory],
+    [city, cityCategories, categories, compassCategory],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
