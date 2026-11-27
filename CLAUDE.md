@@ -16,6 +16,7 @@ A city-utilities map app (bike racks, hospitals with ERs, bodegas, and more to c
 | `docs/architecture.md` | How the system is built. |
 | `docs/team-testing.md` | How people run and test the app (Expo Go, EAS updates, native builds). |
 | `REVIEW.md` | Brief for the automated PR reviewer. |
+| **GitHub Issues** | The project to-do list. `gh issue list --label research` for research tasks. Each issue says what "done" means. Close it (or reference it with `Fixes #N` in the PR or commit) when done. |
 
 ## Parallel sessions
 
