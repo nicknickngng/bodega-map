@@ -1,0 +1,44 @@
+# Build check: runs on every pull request (and on pushes to main) and fails
+# if the app no longer type-checks, passes Expo's health check, or bundles.
+# Deterministic, no AI, no secrets. Same checks we run by hand before a release.
+name: Build check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Placeholders only: the bundle needs these to exist, never real values.
+      EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      # Keep Expo CLI from prompting or calling home for telemetry.
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Expo health check (expo-doctor)
+        run: npx --yes expo-doctor
+
+      - name: Bundle the iOS app
+        run: npx expo export --platform ios --output-dir dist
