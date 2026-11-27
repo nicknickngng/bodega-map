@@ -4,6 +4,14 @@ Running log of architectural and product decisions. Add new entries at the top.
 
 ---
 
+## 2026-11-27 — Verification status is a first-class column (D9)
+
+**Decision:** Store each place's verification status (e.g. visited, partner-verified, unverified) as a regular `verification` column on `places`, with `verified_at`, not inside the deferred `attributes` JSON.
+**Reason:** The app will filter, sort and badge on verification across every category, which a real column supports directly (indexes, simple RPC filters) and JSON makes awkward. It matters most for utilities: Boston's restroom data marks 119 of 175 places "Not Verified", and pointing someone at a restroom that doesn't exist is a real failure.
+**Open:** the exact value list, and the default for rows whose source has no verification info (all of OSM, the NYC bodegas, Cambridge bike racks). Decide before the first import that writes the column. Research: `docs/research/boston-restroom-sources.md`.
+
+---
+
 ## 2026-11-25 — Expo SDK 58 upgrade + team testing via EAS Update
 
 ### Upgraded Expo SDK 54 → 58

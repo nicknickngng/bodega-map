@@ -29,6 +29,7 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 | D6 | **Schema scope:** add `category`, `city` and `source_id` now. **Defer `attributes`.** | `source` already exists. The new piece is `source_id` plus upsert-on-reimport. |
 | D7 | **Out-of-city data is filtered on the server,** not hidden in the app. | Every RPC takes a `city`. |
 | D8 | **The first "city" is a Greater Boston region: Boston + Cambridge.** | Harvard is in Cambridge, so a Boston-only dataset would look empty around campus. One `city` value (`greater-boston`) covers both; each municipality's data is imported separately. Somerville, Brookline and others can be added to the same region later. |
+| D9 | **Verification is a regular column on `places`,** not part of `attributes`. | The app will filter, sort and badge on it across every category, which a real column handles better than JSON. Value list and default still open (see Open items). Research: [boston-restroom-sources.md](research/boston-restroom-sources.md). |
 
 ## Open items
 
@@ -36,7 +37,8 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 - **Racks marked 0 or blank in Boston:** show them or skip them? (Recommendation: import them but hide them until we know what 0 means.)
 - **New name.**
 - **AEDs:** revisit scope and data sources later.
-- **Boston bodegas (optional):** the existing OSM pipeline could pull Boston convenience stores cheaply once multi-city works. Not in scope unless you want it.
+- **Boston bodegas (optional):** the existing OSM pipeline could pull Boston convenience stores cheaply once multi-city works: OSM has 217 `shop=convenience` in Boston + Cambridge ([osm-boston-sources.md](research/osm-boston-sources.md)). Not in scope unless you want it.
+- **Verification default for incoming data (D9):** what value a newly imported row gets when its source says nothing (all of OSM, the existing 3,496 NYC bodegas, the Cambridge bike racks), the exact value list, and how source-specific values map in (Boston restrooms' `Visited` / `Verified with partner` / `Not Verified`). Decide before the first import that writes the column.
 
 ---
 
@@ -128,7 +130,9 @@ First make the code general while it still holds **only NYC bodegas**, and confi
 - **Later uses for the extra fields** (once `attributes` exists): rack count from both sources, bike capacity and rack type from Cambridge. Cambridge's bike repair stations could become their own category.
 - **Private and campus racks** (Harvard, MIT) aren't in either source. OpenStreetMap bike-parking data could fill that gap later. Watch for duplicates against the city data.
 - **Bike racks near the city line:** check for duplicates where Boston and Cambridge data might both list the same rack (along the river, e.g. near the BU Bridge or Mass Ave). Review overlaps with the same `ST_DWithin` check used after the NYC import, rather than auto-deleting.
-- **Hospitals with ERs:** a small dataset (a few dozen in the region). Candidates: OSM `amenity=hospital` with `emergency=yes`, or the state's official hospital list. OSM's emergency tagging is patchy, so cross-check against the official list. The count is small enough to verify by hand.
+- **Hospitals with ERs:** a small dataset. OSM has 26 `amenity=hospital` in Boston + Cambridge: 15 tagged `emergency=yes`, 7 `no`, 4 untagged. It's **missing at least one ER hospital** (St. Elizabeth's, Brighton), so the cross-check against the state's official hospital list is **required, not optional**. Details: [osm-boston-sources.md](research/osm-boston-sources.md).
+- **Scope OSM queries by Wikidata ID, not by name:** `area["wikidata"="Q100"]` (Boston) and `area["wikidata"="Q49111"]` (Cambridge, MA). Name lookups also match Boston, UK and Cambridges in the UK, Ontario, Ohio and Minnesota, and narrowing by state doesn't work in Overpass. The public Overpass servers timed out and returned 502s during testing, so OSM imports need retries with backoff. Sample query in [osm-boston-sources.md](research/osm-boston-sources.md).
+- **Felt is not a source:** its datasets are repackaged OSM and federal layers, refreshed on its own schedule (its Boston hospitals layer still lists a hospital closed in 2024). Go to OSM and the publishers directly. See [felt-evaluation.md](research/felt-evaluation.md).
 
 **Per-category bubbles that still hold up with 10+ categories (D5)**
 
@@ -148,6 +152,10 @@ The map crashed earlier because of the *number of custom markers on screen*: ~15
 ## Phase 4 — More categories and cities
 
 - Restrooms, parks and AEDs (once scoped), plus NYC equivalents of the Boston categories.
+- **Restrooms (sources checked 2026-11-27):** primary source is the City of Boston's public bathrooms layer (175 places, Boston only, with per-day hours, accessibility fields and a verification status; no license attached, same open question as the Boston bike racks). OSM `amenity=toilets` (163 in Boston + Cambridge, sparse hours) fills gaps, including Cambridge. Full comparison and import notes: [boston-restroom-sources.md](research/boston-restroom-sources.md).
+- **Schema follow-ups that restrooms force** (useful for every utility):
+  - **Normalized hours:** `places.hours` already exists, but needs one format every importer writes, parsers per source (Boston's `8:00 AM - 5:00 PM` strings, OSM's `opening_hours`), and markers for seasonal, temporarily closed and 24/7. Pointing someone at a locked restroom is worse than showing nothing; the compass should eventually prefer places open now.
+  - **Verification column (D9):** `verification` + `verified_at` on `places`, mapped per source, returned by `nearby_places` / `places_clusters`, and shown in the detail sheet. Add it in whichever migration first needs it.
 - **Parks are polygons, not points.** Store one representative point per park using `ST_PointOnSurface`, **not** the centroid, which can fall outside an oddly shaped park. Later, store the outline and measure distance to the park's edge.
 - Generalize `scripts/import_osm.py` into a per-category, per-city config (Overpass query + city bounding box), with NYC bodegas as the first entry.
 - Add `attributes jsonb` when the first category needs details beyond the shared fields.
