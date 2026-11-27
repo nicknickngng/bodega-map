@@ -39,3 +39,6 @@ scripts/*.geojson
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Boundary files downloaded by the import scripts
+scripts/boundaries/
