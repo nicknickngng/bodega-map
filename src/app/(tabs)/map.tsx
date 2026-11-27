@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker, type Region } from 'react-native-maps';
+import MapView, { Marker, Polyline, type Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppState } from '@/lib/app-state';
@@ -9,6 +9,7 @@ import { categoryConfig, placeLabel } from '@/lib/categories';
 import { cityConfig } from '@/lib/cities';
 import { DEV_TOOLS_ENABLED } from '@/lib/dev-tools';
 import { useUserLocation } from '@/lib/location';
+import { useNearestPlace } from '@/lib/nearest';
 import { fetchPlaceClusters } from '@/lib/queries';
 import type { PlaceCluster } from '@/types/place';
 
@@ -29,8 +30,10 @@ function gridForRegion(r: Region): number {
 }
 
 export default function MapScreen() {
-  const { city, mapFilter } = useAppState();
-  const { coords, spoofedCoords, setSpoofedCoords } = useUserLocation();
+  const { city, mapFilter, compassCategory } = useAppState();
+  const { coords, gpsCoords, spoofedCoords, setSpoofedCoords } = useUserLocation();
+  // Same target as the compass; the map draws a dotted guide line to it.
+  const { nearest } = useNearestPlace();
   const insets = useSafeAreaInsets();
 
   const cityDefaults = cityConfig(city);
@@ -77,9 +80,16 @@ export default function MapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coords]);
 
-  // Jump to a newly spoofed location.
+  // Jump to a newly spoofed location, and back to GPS when spoofing ends.
+  const hadSpoof = useRef(false);
   useEffect(() => {
-    if (spoofedCoords) centerOn(spoofedCoords.lat, spoofedCoords.lng);
+    if (spoofedCoords) {
+      hadSpoof.current = true;
+      centerOn(spoofedCoords.lat, spoofedCoords.lng);
+    } else if (hadSpoof.current && gpsCoords) {
+      hadSpoof.current = false;
+      centerOn(gpsCoords.lat, gpsCoords.lng);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spoofedCoords]);
 
@@ -107,6 +117,9 @@ export default function MapScreen() {
 
   // Coalesce rapid region changes into a single fetch once movement settles.
   function scheduleLoad(r: Region) {
+    // Invalidate any in-flight response right away, so an answer for the old
+    // viewport or filter can't land during the debounce window.
+    requestIdRef.current++;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => loadClusters(r), RELOAD_DEBOUNCE_MS);
   }
@@ -120,6 +133,7 @@ export default function MapScreen() {
       firstFilterRun.current = false;
       return;
     }
+    setClusters([]); // old filter's clusters are wrong now
     scheduleLoad(region);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
@@ -200,6 +214,21 @@ export default function MapScreen() {
             </Marker>
           );
         })}
+        {coords && nearest ? (
+          // Dotted guide line from the user (or spoofed location) to the place
+          // the compass points to. A straight line, not a walking route.
+          <Polyline
+            key="nearest-guide"
+            coordinates={[
+              { latitude: coords.lat, longitude: coords.lng },
+              { latitude: nearest.lat, longitude: nearest.lng },
+            ]}
+            strokeColor={categoryConfig(compassCategory).color}
+            strokeWidth={3}
+            lineDashPattern={[6, 8]}
+            lineCap="round"
+          />
+        ) : null}
         {spoofedCoords ? (
           <Marker
             key="spoofed-location"
